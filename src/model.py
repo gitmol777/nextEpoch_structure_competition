@@ -36,8 +36,30 @@ class RNA_embedding(nn.Module):
 
         return s, m
 
+# This is the class for the repeating ResNet block
+class ResBlock(nn.Module):
 
-# This is the class to be developed !
+    def __init__(self, in_channel):
+        super(ResBlock, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channel, in_channel, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(in_channel, in_channel, kernel_size=3, padding=1)
+
+        self.batch_norm1 = nn.BatchNorm2d(num_features=in_channel)
+        self.batch_norm2 = nn.BatchNorm2d(num_features=in_channel)
+
+        self.relu = nn.LeakyReLU()
+
+
+    def forward(self, input):
+
+        x = self.batch_norm1(self.conv1(input))
+        x = self.relu(x)
+        x = self.batch_norm2(self.conv2(x))
+        x += input
+        return x
+
+# This is the class for the NN
 class RNA_net(nn.Module):
 
     def __init__(self, embedding_dim):
@@ -45,12 +67,49 @@ class RNA_net(nn.Module):
 
         self.embedding = RNA_embedding(embedding_dim)
 
-        # Your layers here
+        self.module1 = nn.Sequential(
+                                        ResBlock(embedding_dim),
+                                        ResBlock(embedding_dim),
+                                        ResBlock(embedding_dim),
+                                        ResBlock(embedding_dim),
+                                    )
+        self.conv1 = nn.Conv2d(embedding_dim, embedding_dim//2, kernel_size=3, padding=1)
+        
+        self.module2 = nn.Sequential(
+                                        ResBlock(embedding_dim//2),
+                                        ResBlock(embedding_dim//2),
+                                        ResBlock(embedding_dim//2),
+                                        ResBlock(embedding_dim//2),
+                                    )
+        self.conv2 = nn.Conv2d(embedding_dim//2, embedding_dim//4, kernel_size=3, padding=1)
+        
+        self.module3 = nn.Sequential(
+
+                                        ResBlock(embedding_dim//4),
+                                        ResBlock(embedding_dim//4),
+                                        ResBlock(embedding_dim//4),
+                                        ResBlock(embedding_dim//4),
+                                    )
+        self.conv3 = nn.Conv2d(embedding_dim//4, embedding_dim//8, kernel_size=3, padding=1)
+        
+        self.module4 = nn.Sequential(
+
+                                        ResBlock(embedding_dim//8),
+                                        ResBlock(embedding_dim//8),
+                                        ResBlock(embedding_dim//8),
+                                        ResBlock(embedding_dim//8),
+                                    )
+        self.conv4 = nn.Conv2d(embedding_dim//8, 1, kernel_size=3, padding=1)
+
 
     def forward(self, x):
+        _, m = self.embedding(x) # (N, d, L, L)
 
-        s, m = self.embedding(x)
+        m = self.conv1(self.module1(m)) # (N, 1, L, L)
+        m = self.conv2(self.module2(m))
+        m = self.conv3(self.module3(m))
+        m = self.conv4(self.module4(m))
 
-        # Your forward pass here
-
-        return m
+        output = m.squeeze(1) # output is (N, L, L)
+        output = 0.5*(output.permute(0,2,1) + output)
+        return output
